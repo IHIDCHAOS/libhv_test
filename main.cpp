@@ -1,5 +1,6 @@
 #include <iostream>
 #include <fstream>
+#include <utility>
 #include "requests.h"
 #include "json.hpp"
 
@@ -11,7 +12,9 @@ using namespace std;
 #define HE_MANUF "000"
 #define HE_MODEL "00001"
 #define HE_TYPE "1"
-#define HE_VERSION "V2"
+#define HE_VERSION "V1"
+
+string new_ver = "V2";
 
 string otaUrl = "http://ota.heclouds.com";
 string Auth = "version=2018-10-31&res=products/382381/devices/355750075160144"
@@ -111,7 +114,7 @@ struct OTA_Context {
 
     bool pullFile();
 
-    bool reportState(int state);
+    bool reportResult(int result);
 
     bool postVersion();
 
@@ -119,25 +122,26 @@ struct OTA_Context {
 };
 
 bool OTA_Context::checkTask() {
-    req.method = HTTP_GET;
-    req.content_type = APPLICATION_JSON;
-    req.headers = header;
     string checkTaskParams = "/ota/south/check?dev_id=%s&manuf=%s&model=%s&type=%s&version=%s";
     char checkTaskUrl[256] = {0};
     sprintf(checkTaskUrl, (otaUrl + checkTaskParams).c_str(), HE_DEV_ID, HE_MANUF, HE_MODEL, HE_TYPE, HE_VERSION);
+
+    req.content_type = APPLICATION_JSON;
+    req.headers = header;
     req.url = checkTaskUrl;
+    req.method = HTTP_GET;
 
     http_client_send(&req, &res);
-    printf("%d %s\n", res.status_code, res.status_message());
 
     auto j = json::parse(res.body);
-    if (j["errno"] != 0) {
+    cout << j.dump(4)<<endl;
+    if (res.status_code != HTTP_STATUS_OK || j["errno"] != 0) {
         cout << "checkTask error: " << j["error"].get<string>() << endl;
         return false;
     } else {
         from_json(j["data"], data);
-        cout << "token" << data.token << endl;
     }
+    cout << "checkTask Success" << endl;
     return true;
 }
 
@@ -145,16 +149,22 @@ bool OTA_Context::checkToken() {
     string checkTokenParams = "/ota/south/download/%s/check?dev_id=%s";
     char checkTokenUrl[256] = {0};
     sprintf(checkTokenUrl, (otaUrl + checkTokenParams).c_str(), data.token.c_str(), HE_DEV_ID);
+
+    req.Reset();
+    req.content_type = APPLICATION_JSON;
+    req.headers = header;
     req.url = checkTokenUrl;
     req.method = HTTP_GET;
+
     http_client_send(&req, &res);
 
     auto j = json::parse(res.body);
-    if (res.status_code != HTTP_STATUS_OK) {
+    cout << j.dump(4)<<endl;
+    if (res.status_code != HTTP_STATUS_OK || j["errno"] != 0) {
+        cout << "checkToken error: " << j["error"].get<string>() << endl;
         return false;
     }
-//    printf("%d %s\n", res.status_code, res.status_message());
-//    cout << j.dump(4)<<endl;
+    cout << "checkToken Success" << endl;
     return true;
 }
 
@@ -162,6 +172,10 @@ bool OTA_Context::pullFile() {
     string pullFileParams = "/ota/south/download/%s";
     char pullFileUrl[256] = {0};
     sprintf(pullFileUrl, (otaUrl + pullFileParams).c_str(), data.token.c_str());
+
+    req.Reset();
+    req.content_type = APPLICATION_JSON;
+    req.headers = header;
     req.url = pullFileUrl;
     req.method = HTTP_GET;
     http_client_send(&req, &res);
@@ -170,40 +184,64 @@ bool OTA_Context::pullFile() {
     myfile << res.body;
     myfile.close();
 
-    auto j = json::parse(res.body);
     if (res.status_code != HTTP_STATUS_OK) {
+        cout << "pullFile error: " << endl;
         return false;
     }
-//    printf("%d %s\n", res.status_code, res.status_message());
-//    cout << j.dump(4)<<endl;
+    cout << "pullFile Success" << endl;
     return true;
 }
 
-bool OTA_Context::reportState(int state) {
+bool OTA_Context::reportResult(int result) {
     string reportStateParams = "/ota/south/report?dev_id=%s&token=%s";
     char reportStateUrl[256] = {0};
     sprintf(reportStateUrl, (otaUrl + reportStateParams).c_str(), HE_DEV_ID, data.token.c_str());
     json reportStateBody;
-    reportStateBody["state"] = state;
+    reportStateBody["result"] = result;
 
+    req.Reset();
+    req.content_type = APPLICATION_JSON;
+    req.headers = header;
     req.url = reportStateUrl;
     req.method = HTTP_POST;
     req.body = reportStateBody.dump();
+
     http_client_send(&req, &res);
+
+    auto j = json::parse(res.body);
+    cout << j.dump(4)<<endl;
+    if (res.status_code != HTTP_STATUS_OK || j["errno"] != 0){
+        cout << "reportState error: " << j["error"].get<string>() << endl;
+        return false;
+    }
+    cout << "reportState Success" << endl;
     return true;
 }
 
 bool OTA_Context::postVersion() {
-    string postVersionParams = "/ota/device/version?dev_id=";
+    string postVersionParams = "/ota/device/version?dev_id=%s";
     char postVersionUrl[256] = {0};
     sprintf(postVersionUrl, (otaUrl + postVersionParams).c_str(), HE_DEV_ID);
     json postVersionBody;
-    postVersionBody["f_version"] = "f_v2";
+    postVersionBody["f_version"] = new_ver;
     postVersionBody["s_version"] = "s_v1";
 
+    req.Reset();
+    req.content_type = APPLICATION_JSON;
+    req.headers = header;
     req.url = postVersionUrl;
     req.method = HTTP_POST;
+    req.body = postVersionBody.dump();
+
     http_client_send(&req, &res);
+
+    auto j = json::parse(res.body);
+    cout << j.dump(4)<<endl;
+    if (res.status_code != HTTP_STATUS_OK || j["errno"] != 0){
+        cout << "postVersion error: " << j["error"].get<string>() << endl;
+        return false;
+    }
+    cout << "postVersion Success" << endl;
     return true;
 }
 
@@ -213,11 +251,23 @@ bool OTA_Context::queryInfo() {
     sprintf(queryInfoUrl, (otaUrl + queryInfoParams).c_str(), HE_DEV_ID);
     json queryInfoBody;
     queryInfoBody["pid"] = HE_PID;
-    queryInfoBody["authInfo"] = "";// 这里不知道参数是什么
+    queryInfoBody["authInfo"] = data.token;// 这里不知道参数是什么
 
+    req.Reset();
+    req.content_type = APPLICATION_JSON;
+    req.headers = header;
     req.url = queryInfoUrl;
     req.method = HTTP_GET;
+
     http_client_send(&req, &res);
+
+    auto j = json::parse(res.body);
+    cout << j.dump(4)<<endl;
+    if (res.status_code != HTTP_STATUS_OK || j["errno"] != 0){
+        cout << "queryInfo error: " << j["error"].get<string>() << endl;
+        return false;
+    }
+    cout << "queryInfo Success" << endl;
     return true;
 }
 
@@ -306,7 +356,7 @@ static void test_http_sync_client() {
     http_client_send(&req, &res);
 
     //postVersion
-    string postVersionParams = "/ota/device/version?dev_id=";
+    string postVersionParams = "/ota/device/version?dev_id=%s";
     char postVersionUrl[256] = {0};
     sprintf(postVersionUrl, (otaUrl + postVersionParams).c_str(), HE_DEV_ID);
     json postVersionBody;
@@ -339,10 +389,16 @@ int main() {
             .res = HttpResponse(),
             .header = header,
     };
-    bool check = true;
-    while (check) {
-        check = ota.checkTask();
+    bool haveCheckTask = false;
+    while (!haveCheckTask) {
+        haveCheckTask = ota.checkTask();
+        sleep(3);
     }
     ota.checkToken();
+    ota.pullFile();
+    ota.reportResult(101);
+    ota.reportResult(201);
+    ota.postVersion();
+    ota.queryInfo();
     return 0;
 }
