@@ -7,4 +7,8 @@ link_libraries(hv)
 
 set(CMAKE_CXX_STANDARD 11)
 
+file(MAKE_DIRECTORY output)
+
+SET(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/output)
+
 add_executable(libhv_test main.cpp)
