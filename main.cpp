@@ -275,21 +275,5 @@ int main() {
     ota.reportResult(101);
     ota.reportResult(201);
     ota.postVersion();
-
-    /*
-    checkTask error: not exists
-    checkTask Success
-    checkToken Success
-    reportProgress Success 19%
-    reportProgress Success 40%
-    reportProgress Success 60%
-    reportProgress Success 80%
-    Check MD5 Success
-    pullFile Success
-    reportState Success
-    reportState Success
-    postVersion Success
-     */
-
     return 0;
 }
