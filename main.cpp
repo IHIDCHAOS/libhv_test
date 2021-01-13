@@ -6,22 +6,22 @@
 #include "json.hpp"
 #include "md5.h"
 
-main_ctx_t  g_main_ctx;
-
 using json = nlohmann::json;
 using namespace std;
+
+#define OTAHOST "http://ota.heclouds.com"
 #define OTA_FILE "firmware.zip"
+
 #define HE_PID "382381"
 #define HE_DEV_ID "645330303"
 #define HE_MANUF "000"
 #define HE_MODEL "00001"
 #define HE_TYPE "1"
-#define HE_VERSION "V1"
 
-string new_ver = "V2";
+#define OLD_VER "V1"
+#define NEW_VER "V2"
 
-string otaUrl = "http://ota.heclouds.com";
-string Auth = "version=2018-10-31&res=products/382381/devices/355750075160144"
+char Auth[] = "version=2018-10-31&res=products/382381/devices/355750075160144"
               "&et=231817255824&method=sha1&sign=3VWVDHXSYA3ilS%2FdNvtoAUVdGOk%3D";
 
 struct Data {
@@ -59,7 +59,8 @@ struct OTA_Context {
 bool OTA_Context::checkTask() {
     string checkTaskParams = "/ota/south/check?dev_id=%s&manuf=%s&model=%s&type=%s&version=%s";
     char checkTaskUrl[256] = {0};
-    sprintf(checkTaskUrl, (otaUrl + checkTaskParams).c_str(), HE_DEV_ID, HE_MANUF, HE_MODEL, HE_TYPE, HE_VERSION);
+    sprintf(checkTaskUrl, (OTAHOST + checkTaskParams).c_str(),
+            HE_DEV_ID, HE_MANUF, HE_MODEL, HE_TYPE, OLD_VER);
 
     req.content_type = APPLICATION_JSON;
     req.headers = header;
@@ -91,7 +92,8 @@ bool OTA_Context::checkTask() {
 bool OTA_Context::checkToken() {
     string checkTokenParams = "/ota/south/download/%s/check?dev_id=%s";
     char checkTokenUrl[256] = {0};
-    sprintf(checkTokenUrl, (otaUrl + checkTokenParams).c_str(), data.token.c_str(), HE_DEV_ID);
+    sprintf(checkTokenUrl, (OTAHOST + checkTokenParams).c_str(),
+            data.token.c_str(), HE_DEV_ID);
 
     req.Reset();
     req.content_type = APPLICATION_JSON;
@@ -114,16 +116,17 @@ bool OTA_Context::checkToken() {
 bool OTA_Context::pullFile() {
     string pullFileParams = "/ota/south/download/%s";
     char pullFileUrl[256] = {0};
-    sprintf(pullFileUrl, (otaUrl + pullFileParams).c_str(), data.token.c_str());
+    sprintf(pullFileUrl, (OTAHOST + pullFileParams).c_str(),
+            data.token.c_str());
 
     long rangeBase = data.size / 5;
     long rangeNow = 0;
     int step = 0;
 
-    while (rangeNow < data.size){
-        long rangeEnd = (rangeNow+rangeBase) >= data.size ? data.size : (rangeNow+rangeBase);
+    while (rangeNow < data.size) {
+        long rangeEnd = (rangeNow + rangeBase) >= data.size ? data.size : (rangeNow + rangeBase);
         char rangeStr[64] = {0};
-        sprintf(rangeStr,"%ld-%ld",rangeNow,rangeEnd);
+        sprintf(rangeStr, "%ld-%ld", rangeNow, rangeEnd);
         header["Range"] = rangeStr;
 
         req.Reset();
@@ -134,15 +137,15 @@ bool OTA_Context::pullFile() {
         http_client_send(&req, &res);
 
         ofstream myfile;
-        myfile.open(OTA_FILE,ios_base::app);
+        myfile.open(OTA_FILE, ios_base::app);
         myfile << res.body;
         myfile.close();
 
-        int stepNow = (int)(rangeEnd * 100 / data.size);
+        int stepNow = (int) (rangeEnd * 100 / data.size);
 
-        if ((stepNow <= 100) && (stepNow - step >= 10)){
-            if (stepNow == 100){
-                FILE* fp = fopen(OTA_FILE, "rb");
+        if ((stepNow <= 100) && (stepNow - step >= 10)) {
+            if (stepNow == 100) {
+                FILE *fp = fopen(OTA_FILE, "rb");
                 if (fp == nullptr) {
                     cout << "Open file" << OTA_FILE << "failed" << endl;
                     return false;
@@ -151,15 +154,15 @@ bool OTA_Context::pullFile() {
                 fseek(fp, 0, SEEK_END);
                 long filesize = ftell(fp);
                 fseek(fp, 0, SEEK_SET);
-                auto* buf = (unsigned char*)malloc(filesize);
+                auto *buf = (unsigned char *) malloc(filesize);
                 size_t nread = fread(buf, 1, filesize, fp);
                 assert(nread == filesize);
                 hv_md5_hex(buf, filesize, md5, sizeof(md5));
-                if (strcmp(md5,data.md5.c_str())==0){
+                if (strcmp(md5, data.md5.c_str()) == 0) {
                     cout << "Check MD5 Success" << endl;
                     cout << "pullFile Success" << endl;
                     return true;
-                } else{
+                } else {
                     cout << "Check MD5 Failed" << endl;
                     pullFile();
                 }
@@ -174,7 +177,8 @@ bool OTA_Context::pullFile() {
 bool OTA_Context::reportProgress(int step) {
     string reportStateParams = "/ota/south/device/download/%s/progress?dev_id=%s";
     char reportStateUrl[256] = {0};
-    sprintf(reportStateUrl, (otaUrl + reportStateParams).c_str(), data.token.c_str(),HE_DEV_ID);
+    sprintf(reportStateUrl, (OTAHOST + reportStateParams).c_str(),
+            data.token.c_str(), HE_DEV_ID);
     json reportStateBody;
     reportStateBody["step"] = step;
 
@@ -191,7 +195,7 @@ bool OTA_Context::reportProgress(int step) {
 
     auto j = json::parse(res.body);
 //    cout << j.dump(4)<<endl;
-    if (res.status_code != HTTP_STATUS_OK || j["errno"] != 0){
+    if (res.status_code != HTTP_STATUS_OK || j["errno"] != 0) {
         cout << "reportProgress error: " << j["error"].get<string>() << endl;
         return false;
     }
@@ -202,7 +206,8 @@ bool OTA_Context::reportProgress(int step) {
 bool OTA_Context::reportResult(int result) {
     string reportStateParams = "/ota/south/report?dev_id=%s&token=%s";
     char reportStateUrl[256] = {0};
-    sprintf(reportStateUrl, (otaUrl + reportStateParams).c_str(), HE_DEV_ID, data.token.c_str());
+    sprintf(reportStateUrl, (OTAHOST + reportStateParams).c_str(), HE_DEV_ID,
+            data.token.c_str());
     json reportStateBody;
     reportStateBody["result"] = result;
 
@@ -217,7 +222,7 @@ bool OTA_Context::reportResult(int result) {
 
     auto j = json::parse(res.body);
 //    cout << j.dump(4)<<endl;
-    if (res.status_code != HTTP_STATUS_OK || j["errno"] != 0){
+    if (res.status_code != HTTP_STATUS_OK || j["errno"] != 0) {
         cout << "reportState error: " << j["error"].get<string>() << endl;
         return false;
     }
@@ -228,9 +233,10 @@ bool OTA_Context::reportResult(int result) {
 bool OTA_Context::postVersion() {
     string postVersionParams = "/ota/device/version?dev_id=%s";
     char postVersionUrl[256] = {0};
-    sprintf(postVersionUrl, (otaUrl + postVersionParams).c_str(), HE_DEV_ID);
+    sprintf(postVersionUrl, (OTAHOST + postVersionParams).c_str(),
+            HE_DEV_ID);
     json postVersionBody;
-    postVersionBody["f_version"] = new_ver;
+    postVersionBody["f_version"] = NEW_VER;
     postVersionBody["s_version"] = "s_v1";
 
     req.Reset();
@@ -244,7 +250,7 @@ bool OTA_Context::postVersion() {
 
     auto j = json::parse(res.body);
 //    cout << j.dump(4)<<endl;
-    if (res.status_code != HTTP_STATUS_OK || j["errno"] != 0){
+    if (res.status_code != HTTP_STATUS_OK || j["errno"] != 0) {
         cout << "postVersion error: " << j["error"].get<string>() << endl;
         return false;
     }
@@ -253,8 +259,7 @@ bool OTA_Context::postVersion() {
 }
 
 int main() {
-    if (access(OTA_FILE, 0) == 0)
-    {
+    if (access(OTA_FILE, 0) == 0) {
         remove(OTA_FILE);
     }
     OTA_Context ota;
